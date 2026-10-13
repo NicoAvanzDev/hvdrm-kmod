@@ -54,5 +54,6 @@ int hv_host_dirty(struct hv_drm_softc *, int, int, int, int);
 int hv_kms_attach(struct hv_drm_softc *);
 void hv_kms_cleanup(struct hv_drm_softc *);
 void hv_console_refresh(struct hv_drm_softc *);
+void hv_console_show(struct hv_drm_softc *);
 
 #endif

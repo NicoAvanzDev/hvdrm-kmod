@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 #include "hv_drm.h"
+#include <sys/systm.h>
 #include <sys/malloc.h>
 #include <sys/sysctl.h>
 #include <vm/vm.h>
@@ -176,6 +177,22 @@ hv_console_refresh(struct hv_drm_softc *sc)
 	mtx_lock(&sc->display_lock);
 	hv_console_copy(sc);
 	mtx_unlock(&sc->display_lock);
+}
+
+/* Shutdown and panic stop the refresh callout, so show the console now. */
+void
+hv_console_show(struct hv_drm_softc *sc)
+{
+	/* After a panic the lock holder may be the panicking thread itself. */
+	bool panicked = KERNEL_PANICKED();
+
+	if (!panicked)
+		mtx_lock(&sc->display_lock);
+	sc->display_owned = false;
+	memcpy(sc->vram, sc->console_buffer, (size_t)sc->pitch * sc->height);
+	hv_host_dirty(sc, 0, 0, sc->width, sc->height);
+	if (!panicked)
+		mtx_unlock(&sc->display_lock);
 }
 
 static void

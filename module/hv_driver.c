@@ -2,6 +2,7 @@
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
+#include <sys/eventhandler.h>
 #include <sys/linker.h>
 #include <sys/module.h>
 #include <sys/limits.h>
@@ -38,6 +39,12 @@ hv_drm_getinfo(device_t dev)
 {
 	struct hv_drm_softc *sc = device_get_softc(dev);
 	return (&sc->console);
+}
+
+static void
+hv_drm_shutdown(void *arg, int howto __unused)
+{
+	hv_console_show(arg);
 }
 
 static int
@@ -112,6 +119,14 @@ hv_drm_attach(device_t dev)
 		goto fail;
 	sc->console_attached = true;
 	hv_bus_refresh_start(sc);
+	/*
+	 * Panic output reaches only the RAM console. Flush it after cngrab()
+	 * (before a dump) and again before the automatic reboot wait.
+	 */
+	EVENTHANDLER_REGISTER(shutdown_post_sync, hv_drm_shutdown, sc,
+	    SHUTDOWN_PRI_DEFAULT);
+	EVENTHANDLER_REGISTER(shutdown_final, hv_drm_shutdown, sc,
+	    SHUTDOWN_PRI_DEFAULT);
 	device_printf(dev, "%ux%u, software rendering, DRM/KMS ready\n",
 	    sc->width, sc->height);
 	return (0);
