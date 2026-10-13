@@ -2,9 +2,7 @@
 DRMKMODDIR= vendor/drm-kmod
 SYSDIR= /usr/src/sys
 KMODDIR= /boot/modules
-PREFIX= /usr/local
 DESTDIR=
-SESSION_USER=
 
 all:
 	@sh tools/check-host.sh "$(SYSDIR)" "$(DRMKMODDIR)"
@@ -13,7 +11,6 @@ all:
 install:
 	@sh tools/check-host.sh "$(SYSDIR)" "$(DRMKMODDIR)"
 	sh tools/build.sh install "$(SYSDIR)" "$(DRMKMODDIR)" "$(KMODDIR)" "$(DESTDIR)"
-	sh tools/install-session.sh "$(PREFIX)" "$(DESTDIR)" "$(SESSION_USER)"
 
 check:
 	sh tests/run.sh

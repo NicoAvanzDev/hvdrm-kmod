@@ -1,7 +1,0 @@
-[Desktop Entry]
-Name=Sway (Hyper-V)
-Comment=Wayland session using the FreeBSD Hyper-V display
-Exec=hvdrm-sway
-TryExec=hvdrm-sway
-Type=Application
-DesktopNames=sway

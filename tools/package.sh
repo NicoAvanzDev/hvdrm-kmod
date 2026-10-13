@@ -8,7 +8,6 @@ stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT HUP INT TERM
 mkdir -p "$stage/boot/modules" "$stage/usr/local/share/doc/hvdrm-kmod" "$root/dist"
 mkdir -p "$stage/usr/local/share/hvdrm-kmod"
-sh "$root/tools/install-session.sh" /usr/local "$stage"
 for name in dmabuf linuxkpi_video drm; do
     install -m 0555 "$drmdir/$name/$name.ko" "$stage/boot/modules/$name.ko"
 done
@@ -21,11 +20,11 @@ tar -czf "$stage/usr/local/share/hvdrm-kmod/source.tar.gz" \
     --exclude='*_if*.c' --exclude='*_if*.h' --exclude='opt_*.h' \
     --exclude='.depend*' --exclude='export_syms' --exclude='*/@' \
     --exclude='*/machine' --exclude='*/x86' --exclude='*/i386' \
-    -C "$root" Makefile README.md LICENSE licenses module include tools tests patches docs session vendor
+    -C "$root" Makefile README.md LICENSE licenses module include tools tests patches docs vendor
 abi=$(pkg config ABI)
 cat > "$stage/+MANIFEST" <<EOF
 name: hvdrm-kmod
-version: "0.2.0"
+version: "0.2.1"
 origin: graphics/hvdrm-kmod
 comment: "Experimental Hyper-V DRM display for FreeBSD 15.1"
 desc: "Hyper-V Generation 2 display module and VMBus-aware DRM core. Built for $(freebsd-version -k)."
@@ -40,9 +39,6 @@ files: {
   "/boot/modules/drm.ko": "-",
   "/boot/modules/dmabuf.ko": "-",
   "/boot/modules/linuxkpi_video.ko": "-",
-  "/usr/local/bin/hvdrm-sway": "-",
-  "/usr/local/share/wayland-sessions/hvdrm-sway.desktop": "-",
-  "/usr/local/share/hvdrm-kmod/setup-session.sh": "-",
   "/usr/local/share/doc/hvdrm-kmod/README.md": "-",
   "/usr/local/share/doc/hvdrm-kmod/LICENSE": "-",
   "/usr/local/share/doc/hvdrm-kmod/GPL-2.0.txt": "-",
@@ -52,6 +48,6 @@ scripts: {
   post-install: "kldxref /boot/modules",
   post-deinstall: "kldxref /boot/modules"
 }
-messages: [{message: "Run sudo sh /usr/local/share/hvdrm-kmod/setup-session.sh YOUR_USER once, reboot, then start hvdrm-sway from the local console. Documentation: /usr/local/share/doc/hvdrm-kmod/README.md.", type: install}]
+messages: [{message: "The Hyper-V display modules are installed. Reboot after replacing loaded modules, then load hypervdrm through your normal kernel-module configuration. Documentation: /usr/local/share/doc/hvdrm-kmod/README.md.", type: install}]
 EOF
 pkg create -r "$stage" -m "$stage" -o "$root/dist"
