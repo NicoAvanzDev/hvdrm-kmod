@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 #include "hv_drm.h"
 #include <sys/malloc.h>
+#include <sys/sysctl.h>
 #include <vm/vm.h>
 #include <vm/pmap.h>
 #include <linux/device.h>
@@ -157,13 +158,56 @@ hv_dumb_create(struct drm_file *file, struct drm_device *dev,
 }
 
 DEFINE_DRM_GEM_FOPS(hv_file_ops);
+
+/* Called with display_lock held; console writes only affect its RAM buffer. */
+static void
+hv_console_copy(struct hv_drm_softc *sc)
+{
+	mtx_assert(&sc->display_lock, MA_OWNED);
+	if (!sc->display_owned && sc->console_buffer != NULL) {
+		memcpy(sc->vram, sc->console_buffer, (size_t)sc->pitch * sc->height);
+		hv_host_dirty(sc, 0, 0, sc->width, sc->height);
+	}
+}
+
+void
+hv_console_refresh(struct hv_drm_softc *sc)
+{
+	mtx_lock(&sc->display_lock);
+	hv_console_copy(sc);
+	mtx_unlock(&sc->display_lock);
+}
+
+static void
+hv_master_set(struct drm_device *dev, struct drm_file *file, bool from_open)
+{
+	struct hv_drm_softc *sc = hv_sc(dev);
+	mtx_lock(&sc->display_lock);
+	sc->display_owned = true;
+	/* Reacquiring after a VT switch must replace the whole console image. */
+	sc->full_redraw = true;
+	mtx_unlock(&sc->display_lock);
+}
+
+static void
+hv_master_drop(struct drm_device *dev, struct drm_file *file)
+{
+	struct hv_drm_softc *sc = hv_sc(dev);
+	mtx_lock(&sc->display_lock);
+	sc->display_owned = false;
+	hv_console_copy(sc);
+	mtx_unlock(&sc->display_lock);
+}
+
 static const struct drm_driver hv_drm_ops = {
 	.driver_features = DRIVER_GEM | DRIVER_MODESET | DRIVER_ATOMIC,
 	.name = "hypervdrm",
 	.desc = "FreeBSD Hyper-V software display",
 	.date = "20261013",
-	.major = 0, .minor = 1,
+	.major = 0, .minor = 2,
 	.fops = &hv_file_ops,
+	.master_set = hv_master_set,
+	.master_drop = hv_master_drop,
 	.dumb_create = hv_dumb_create,
 	.dumb_map_offset = drm_gem_dumb_map_offset,
 	/* Generic import accepts our own exports; cross-device import is absent. */
@@ -297,8 +341,17 @@ hv_plane_update(struct drm_plane *plane, struct drm_atomic_state *state)
 	if (p->fb == NULL || !p->visible)
 		return;
 	buffer = container_of(drm_gem_fb_get_obj(p->fb, 0), struct hv_buffer, gem);
-	if (!drm_atomic_helper_damage_merged(old, p, &damage))
+	mtx_lock(&sc->display_lock);
+	if (!sc->display_owned) {
+		mtx_unlock(&sc->display_lock);
 		return;
+	}
+	if (sc->full_redraw) {
+		damage = (struct drm_rect){ 0, 0, sc->width, sc->height };
+	} else if (!drm_atomic_helper_damage_merged(old, p, &damage)) {
+		mtx_unlock(&sc->display_lock);
+		return;
+	}
 	source = (uint8_t *)buffer->data + p->fb->offsets[0];
 	target = sc->vram;
 	for (y = damage.y1; y < damage.y2; y++)
@@ -306,6 +359,8 @@ hv_plane_update(struct drm_plane *plane, struct drm_atomic_state *state)
 		    source + (size_t)y * p->fb->pitches[0] + damage.x1 * 4,
 		    (damage.x2 - damage.x1) * 4);
 	hv_host_dirty(sc, damage.x1, damage.y1, damage.x2, damage.y2);
+	sc->full_redraw = false;
+	mtx_unlock(&sc->display_lock);
 }
 
 static const struct drm_plane_funcs hv_plane_funcs = {
@@ -353,6 +408,9 @@ hv_kms_attach(struct hv_drm_softc *sc)
 	struct drm_device *drm;
 	int error;
 
+	mtx_init(&sc->display_lock, "hvdisplay", NULL, MTX_DEF);
+	sc->display_lock_initialized = true;
+	sc->full_redraw = true;
 	kms = kzalloc(sizeof(*kms), GFP_KERNEL);
 	device = kzalloc(sizeof(*device), GFP_KERNEL);
 	if (kms == NULL || device == NULL) {
@@ -418,6 +476,11 @@ hv_kms_attach(struct hv_drm_softc *sc)
 	if (error != 0)
 		return (-error);
 	sc->registered = true;
+	snprintf(sc->drm_device, sizeof(sc->drm_device), "/dev/dri/card%d",
+	    drm->primary->index);
+	SYSCTL_ADD_STRING(device_get_sysctl_ctx(sc->dev),
+	    SYSCTL_CHILDREN(device_get_sysctl_tree(sc->dev)), OID_AUTO,
+	    "drm_device", CTLFLAG_RD, sc->drm_device, 0, "DRM primary device node");
 	HV_STEP(sc, "registration complete");
 	return (0);
 }
@@ -437,4 +500,8 @@ hv_kms_cleanup(struct hv_drm_softc *sc)
 	}
 	kfree(sc->kms);
 	sc->kms = NULL;
+	if (sc->display_lock_initialized) {
+		mtx_destroy(&sc->display_lock);
+		sc->display_lock_initialized = false;
+	}
 }

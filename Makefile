@@ -2,29 +2,26 @@
 DRMKMODDIR= vendor/drm-kmod
 SYSDIR= /usr/src/sys
 KMODDIR= /boot/modules
+PREFIX= /usr/local
+DESTDIR=
+SESSION_USER=
 
 all:
 	@sh tools/check-host.sh "$(SYSDIR)" "$(DRMKMODDIR)"
-	sh tools/build.sh module "$(SYSDIR)" "$(DRMKMODDIR)" "$(KMODDIR)"
-
-deps:
-	sh tools/fetch-deps.sh "$(DRMKMODDIR)"
-
-core:
-	@sh tools/check-host.sh "$(SYSDIR)" "$(DRMKMODDIR)"
-	sh tools/build.sh core "$(SYSDIR)" "$(DRMKMODDIR)" "$(KMODDIR)"
+	sh tools/build.sh all "$(SYSDIR)" "$(DRMKMODDIR)" "$(KMODDIR)" "$(DESTDIR)"
 
 install:
 	@sh tools/check-host.sh "$(SYSDIR)" "$(DRMKMODDIR)"
-	sh tools/build.sh install "$(SYSDIR)" "$(DRMKMODDIR)" "$(KMODDIR)"
+	sh tools/build.sh install "$(SYSDIR)" "$(DRMKMODDIR)" "$(KMODDIR)" "$(DESTDIR)"
+	sh tools/install-session.sh "$(PREFIX)" "$(DESTDIR)" "$(SESSION_USER)"
 
 check:
 	sh tests/run.sh
 
-package:
+package: all
 	sh tools/package.sh "$(DRMKMODDIR)"
 
 clean:
-	sh tools/build.sh clean "$(SYSDIR)" "$(DRMKMODDIR)" "$(KMODDIR)"
+	sh tools/build.sh clean "$(SYSDIR)" "$(DRMKMODDIR)" "$(KMODDIR)" "$(DESTDIR)"
 
-.PHONY: all deps core install check package clean
+.PHONY: all install check package clean

@@ -105,6 +105,7 @@ hv_reconfigure(void *context, int pending __unused)
 	if (sc->ready) {
 		hv_hide_pointer(sc);
 		hv_host_situation(sc);
+		hv_console_refresh(sc);
 		hv_host_dirty(sc, 0, 0, sc->width, sc->height);
 	}
 	mtx_unlock(&sc->lock);
@@ -117,8 +118,8 @@ hv_refresh(void *context)
 
 	mtx_assert(&sc->lock, MA_OWNED);
 	if (sc->ready) {
-		/* VT writes directly to VRAM and has no damage callback. */
-		hv_host_dirty(sc, 0, 0, sc->width, sc->height);
+		/* VT draws in private RAM; copy it only while no DRM master owns VRAM. */
+		hv_console_refresh(sc);
 		callout_schedule(&sc->refresh, MAX(1, hz / 30));
 	}
 }

@@ -4,7 +4,7 @@ DRMKMODDIR?= ${PROJECTDIR}/vendor/drm-kmod
 KMODDIR?= /boot/modules
 
 .if !exists(${DRMKMODDIR}/linuxkpi_version.mk)
-.error Run tools/fetch-deps.sh first, or set DRMKMODDIR to the patched DRM 6.12 tree
+.error The vendored DRM source is missing; use a complete project source archive
 .endif
 .include "${DRMKMODDIR}/kconfig.mk"
 

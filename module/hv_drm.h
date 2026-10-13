@@ -24,6 +24,7 @@ struct hv_drm_softc {
 	device_t dev;
 	struct vmbus_channel *channel;
 	struct mtx lock;
+	struct mtx display_lock;
 	struct cv response_cv;
 	struct callout refresh;
 	struct task reconfigure;
@@ -31,6 +32,7 @@ struct hv_drm_softc {
 	uint32_t expected, version;
 	int response_ready;
 	bool opened, ready, console_attached, registered;
+	bool display_lock_initialized, display_owned, full_redraw;
 	uint8_t *receive_buffer;
 	struct fb_info console;
 	struct drm_device *drm;
@@ -39,6 +41,8 @@ struct hv_drm_softc {
 	uint32_t width, height, pitch;
 	uint64_t vram_address, vram_size;
 	void *vram;
+	void *console_buffer;
+	char drm_device[32];
 };
 
 int hv_bus_start(struct hv_drm_softc *);
@@ -49,5 +53,6 @@ int hv_host_situation(struct hv_drm_softc *);
 int hv_host_dirty(struct hv_drm_softc *, int, int, int, int);
 int hv_kms_attach(struct hv_drm_softc *);
 void hv_kms_cleanup(struct hv_drm_softc *);
+void hv_console_refresh(struct hv_drm_softc *);
 
 #endif

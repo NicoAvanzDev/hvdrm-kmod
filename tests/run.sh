@@ -8,3 +8,5 @@ ${CC:-cc} -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
     -o "$temp/protocol-test"
 "$temp/protocol-test"
 for script in "$root"/tools/*.sh "$root"/tests/*.sh; do sh -n "$script"; done
+sh -n "$root/session/hvdrm-sway"
+sh -n "$root/session/setup-session.sh"

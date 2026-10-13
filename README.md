@@ -1,147 +1,129 @@
 # hvdrm-kmod for FreeBSD 15.1
 
-Experimental, out-of-tree Hyper-V Generation 2 display module for FreeBSD
-15.1 amd64. It extends the SynthVID approach in
-[D39395](https://reviews.freebsd.org/D39395?id=119805) with a DRM/KMS device
-for a Wayland compositor using software rendering.
+An experimental Hyper-V Generation 2 display driver for FreeBSD 15.1 amd64,
+with a software-rendered Wayland desktop. Based on the SynthVID approach in
+[FreeBSD review D39395](https://reviews.freebsd.org/D39395?id=119805).
 
-**Hyper-V hardware validation is pending.** Native FreeBSD builds and a
-software-rendered Sway session on the RAM test display pass. This does not
-establish that the Hyper-V host displays frames or that VT/input work there. See
-[docs/VALIDATION.md](docs/VALIDATION.md) for the recorded checks.
+The DRM dependency is included in this repository, already patched. There
+are no dependency clones, submodules, or downloads during the build.
 
-The module provides one virtual connector, one primary plane, atomic
-modesetting, page-flip completion events, and mappable XRGB8888 dumb buffers.
-The host's preferred resolution is the only exposed mode. Rendering happens
-on the guest CPU; buffers are copied into the EFI framebuffer and the host
-is notified of damage. A 30 Hz refresh also updates the text console.
+## Build and install
 
-This first version requires an EFI XRGB8888 framebuffer large enough for
-the selected resolution. Generation 1 VMs, GPU acceleration, hardware
-cursors, importing buffers from other graphics drivers, guest suspend/resume, and unloading an
-attached device are not implemented. Reboot to remove an attached module.
-PRIME export and re-import of this driver's own buffers are supported, as
-required by wlroots' software display allocator.
-Map those buffers through the DRM device using `MAP_DUMB`; mapping the
-exported DMA-BUF fd returns `EOPNOTSUPP` because FreeBSD's native DMA-BUF
-shim does not implement the VM mapping bridge.
-
-## Build
-
-Run inside the FreeBSD 15.1 guest. Install the **matching kernel sources**
-with the FreeBSD installer or the appropriate PkgBase source package;
-`/usr/src/sys` must match the running kernel. Confirm `freebsd-version -kru`
-before building. Do not use another release's kernel sources.
+Install the **matching FreeBSD kernel sources** through the installer or
+PkgBase first. `/usr/src/sys` must match the running 15.1 kernel; check
+`freebsd-version -kru`. Then, in the project directory:
 
 ```sh
-pkg install git
-git clone https://github.com/NicoAvanzDev/hvdrm-kmod.git
-cd hvdrm-kmod
-make deps
-make core
 make
-make check
+sudo make install
 ```
 
-`make deps` downloads the pinned DRM 6.12 release and applies the VMBus and
-DMA-BUF fixes. The runtime DRM core must include
-these changes. An unmodified `drm-612-kmod` package is insufficient.
-The module requires a compatibility symbol from the patched core. If a
-stock core is already loaded, `kldload` fails with an undefined
-`drm_hyperv_compat_version` symbol; reboot after installing the bundle.
-Use `SYSDIR=/path/to/sys` to select a different matching source directory.
-Use an **absolute** `DRMKMODDIR=/path/to/drm-kmod` to select a prepared
-dependency checkout. `make check` also runs on Linux.
-
-## Install and first load
-
-Keep an SSH session open for the first Hyper-V display test. Inside the
-guest, as root:
+`make` builds the driver and all three DRM dependency modules. Installation
+puts them in `/boot/modules`, installs the session launcher, installs Sway,
+seatd and D-Bus if missing, enables seatd and driver loading at boot, and
+adds the user running sudo to the `video` group. It preserves existing
+`kld_list` entries. Reboot to use the updated kernel modules and group
+membership. Log in at the VM's local console and run:
 
 ```sh
-make install
+hvdrm-sway
 ```
 
-This installs `hypervdrm.ko` and the patched `drm.ko`, `dmabuf.ko`, and
-`linuxkpi_video.ko` under `/boot/modules`. It replaces any existing files
-with those names. Do not use `make install` alongside a package that owns
-those files: use the package route below or remove that package first.
-If a previous DRM core is already loaded, reboot before loading this one.
+The launcher selects this driver's actual DRM device, uses the login runtime
+directory (or creates a private temporary one), selects software rendering,
+and starts a D-Bus session. No XDG or WLR exports are required. It also installs
+“Sway (Hyper-V)” in the Wayland session menu for an existing display manager.
+Sway's normal configuration and command-line options still work:
+`hvdrm-sway -d` enables debug logging. Logs are saved in
+`~/.local/state/hvdrm/sway.log` by default, keeping diagnostics off the display
+console.
 
-Configure the preferred resolution from an administrator PowerShell on
-the Windows host (replace the example resolution if needed):
+When installing from a root shell instead of sudo, use
+`make install SESSION_USER=YOUR_USER` to select the desktop user.
+`SYSDIR=/path/to/sys` selects other matching kernel sources.
+`DESTDIR=/path/to/stage` stages files without installing packages or changing
+services, groups or boot settings.
+
+The bundle installs a patched `drm.ko`, `dmabuf.ko` and `linuxkpi_video.ko`.
+If a stock DRM package owns those files, remove that package before source
+installation, or resolve the file conflict through the package route below.
+A different GPU driver needs separate verification with this patched core.
+An already-loaded core remains in memory until reboot; a stock core cannot
+satisfy the driver's compatibility symbol.
+
+## Download without Git
+
+GitHub's source archive includes the vendored dependency:
+
+```sh
+fetch -o hvdrm-kmod.tar.gz https://github.com/NicoAvanzDev/hvdrm-kmod/archive/refs/heads/main.tar.gz
+tar -xzf hvdrm-kmod.tar.gz
+cd hvdrm-kmod-main
+make
+sudo make install
+```
+
+For an existing Git checkout, `git pull` followed by the two make commands
+is enough. `make clean` removes build outputs from both the driver and the
+vendored dependency.
+
+## Hyper-V configuration
+
+Use a Generation 2 VM with an EFI XRGB8888 framebuffer. The host's preferred
+resolution is the only exposed mode. If necessary, set it from administrator
+PowerShell on the Windows host, then boot the VM:
 
 ```powershell
 Set-VMVideo -VMName FreeBSD -ResolutionType Single -HorizontalResolution 1920 -VerticalResolution 1080
 ```
 
-Then in FreeBSD:
+If the separate `hvfb` module from D39395 is installed, disable its loading
+before booting this driver: both claim the same device. The driver should
+report `hypervdrm0`, `DRM/KMS ready`, and a `/dev/dri/cardN` node.
+`sysctl dev.hypervdrm.0.drm_device` reports that node. Ensure the Hyper-V
+keyboard and mouse are available through evdev. Keep SSH available during
+initial testing.
 
-```sh
-kldload /boot/modules/hypervdrm.ko
-dmesg | tail -50
-ls -l /dev/dri/
-```
+## Display ownership and current limits
 
-Expect a `hypervdrm0` device, a `DRM/KMS ready` message and a `/dev/dri/cardN`
-node. A render node is not expected. If `hvfb` from D39395 is installed,
-disable its loading before booting this module: both claim the same device.
+The console draws into its own RAM buffer. While Sway owns the display, VT
+output and compositor logs cannot overwrite its framebuffer. Releasing DRM
+ownership restores the console; reacquiring it forces a complete repaint.
+This addresses the console text overlapping the desktop in the reported
+Hyper-V screenshot. The fix has native FreeBSD regression coverage; a new
+Hyper-V run is still needed to confirm the visible result.
 
-Only after manual testing succeeds, append `hypervdrm` to `kld_list` in
-`/etc/rc.conf`, preserving existing entries. Prefer rc loading over loader
-loading so that the external DRM dependencies are loaded in order.
+The driver provides one virtual connector and primary plane, atomic modesetting,
+page-flip completion events, and mappable XRGB8888 dumb buffers. Rendering
+runs on the guest CPU. It supports PRIME export and re-import of its own
+buffers; map them through the DRM fd with `MAP_DUMB`. Mapping a DMA-BUF fd
+itself returns `EOPNOTSUPP` because the FreeBSD shim lacks that mapping bridge.
 
-## Installable package
+Generation 1 VMs, GPU acceleration, hardware cursors, cross-GPU buffer imports,
+guest suspend/resume, and unloading an attached display are not implemented.
+Reboot to replace or remove a loaded driver. The EFI framebuffer must be
+large enough for the selected resolution.
 
-After building all modules:
+## Optional package and checks
 
-```sh
-make package
-pkg add dist/hypervdrm-experimental-0.1.0.pkg
-```
+`make check` runs portable protocol tests with ASan/UBSan and checks script
+syntax. Native DRM tests are described in [tests/README.md](tests/README.md).
+Recorded results and remaining Hyper-V checks are in
+[docs/VALIDATION.md](docs/VALIDATION.md).
 
-The package bundles the patched DRM dependencies and uses the same module
-paths as stock DRM packages. Resolve any file conflict before installation;
-avoid forcing it. The package is only for the kernel it was built against.
-Rebuild it after a kernel upgrade. It does not enable autoload or start a
-compositor. A different GPU driver should not share this experimental core
-without separate verification.
+After building, `make package` produces `dist/hvdrm-kmod-0.2.0.pkg`, including
+all four modules, the launcher, and corresponding vendored source. It is
+specific to the kernel it was built against. Install it with `sudo pkg add`
+and run `sudo sh /usr/local/share/hvdrm-kmod/setup-session.sh YOUR_USER` once
+to prepare the desktop packages, service, group and boot configuration.
+Then reboot and run `hvdrm-sway` at the local console.
 
-## Try Sway
+To roll back, remove `hypervdrm` from `kld_list`, reboot, remove the installed
+bundle, and reinstall the stock DRM package if previously used. For a source
+installation, the bundle files are the four modules above,
+`/usr/local/bin/hvdrm-sway` and
+`/usr/local/share/wayland-sessions/hvdrm-sway.desktop`. The firmware text
+console is available without this driver.
 
-Following the [FreeBSD Wayland handbook](https://docs.freebsd.org/en/books/handbook/wayland/),
-install the compositor and seat service as root:
-
-```sh
-pkg install sway seatd
-sysrc seatd_enable=YES
-service seatd start
-pw groupmod video -m YOUR_USER
-```
-
-Log out and back in so that the group change takes effect. Run from the
-guest's local text console as that user, replacing `/dev/dri/card0` with
-the node created by `hypervdrm` if there are several devices:
-
-```sh
-export XDG_RUNTIME_DIR=/tmp/xdg-runtime-$(id -u)
-mkdir -p "$XDG_RUNTIME_DIR"
-chmod 700 "$XDG_RUNTIME_DIR"
-export LIBSEAT_BACKEND=seatd
-export WLR_BACKENDS=drm,libinput
-export WLR_RENDERER=pixman
-export WLR_DRM_DEVICES=/dev/dri/card0
-sway -d 2> "$HOME/sway-hypervdrm.log"
-```
-
-The module has no hardware cursor plane; wlroots must draw a software
-cursor. Ensure the Hyper-V keyboard and mouse devices are visible through
-evdev. For diagnosis, collect `dmesg`, `freebsd-version -kru`, `kldstat`,
-`ls -l /dev/dri /dev/input`, and the Sway log. Start from a local VT;
-an ordinary SSH shell does not supply a local console session.
-
-To roll back, remove `hypervdrm` from `kld_list`, reboot, then remove the
-experimental package and reinstall the stock DRM package if previously
-used. The EFI text console is available without this module.
-
-Protocol provenance and dependency revisions are in [docs/SOURCES.md](docs/SOURCES.md).
+Dependency revision and licenses: [vendor/README.md](vendor/README.md).
+Protocol provenance: [docs/SOURCES.md](docs/SOURCES.md).

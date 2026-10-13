@@ -29,6 +29,24 @@ fixture_probe(device_t dev)
 }
 
 static int
+fixture_console_pixel(SYSCTL_HANDLER_ARGS)
+{
+	struct hv_drm_softc *sc = arg1;
+	uint32_t pixel = *(uint32_t *)sc->console_buffer;
+	int error;
+
+	error = sysctl_handle_int(oidp, &pixel, 0, req);
+	if (error != 0 || req->newptr == NULL)
+		return (error);
+	*(uint32_t *)sc->console_buffer = pixel;
+	*(uint32_t *)((uint8_t *)sc->console_buffer +
+	    (sc->height - 1) * sc->pitch + (sc->width - 1) * 4) = pixel;
+	/* Simulate both VT output and its periodic refresh during a desktop session. */
+	hv_console_refresh(sc);
+	return (0);
+}
+
+static int
 fixture_attach(device_t dev)
 {
 	struct hv_drm_softc *sc = device_get_softc(dev);
@@ -40,10 +58,12 @@ fixture_attach(device_t dev)
 	sc->pitch = sc->width * 4;
 	sc->vram_size = 8 * 1024 * 1024;
 	sc->vram = malloc(sc->vram_size, M_DEVBUF, M_WAITOK | M_ZERO);
+	sc->console_buffer = malloc(sc->vram_size, M_DEVBUF, M_WAITOK | M_ZERO);
 	error = hv_kms_attach(sc);
 	if (error != 0) {
 		hv_kms_cleanup(sc);
 		free(sc->vram, M_DEVBUF);
+		free(sc->console_buffer, M_DEVBUF);
 		return (error);
 	}
 	SYSCTL_ADD_UINT(device_get_sysctl_ctx(dev),
@@ -54,6 +74,10 @@ fixture_attach(device_t dev)
 	    CTLFLAG_RD, (uint32_t *)((uint8_t *)sc->vram +
 	    (sc->height - 1) * sc->pitch + (sc->width - 1) * 4), 0,
 	    "Last visible scanout pixel");
+	SYSCTL_ADD_PROC(device_get_sysctl_ctx(dev),
+	    SYSCTL_CHILDREN(device_get_sysctl_tree(dev)), OID_AUTO, "console_pixel",
+	    CTLTYPE_UINT | CTLFLAG_RW | CTLFLAG_MPSAFE, sc, 0,
+	    fixture_console_pixel, "IU", "Simulate VT output and refresh");
 	return (0);
 }
 

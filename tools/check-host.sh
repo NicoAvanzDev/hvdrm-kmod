@@ -16,7 +16,8 @@ if [ "$source_version" != "$(uname -K)" ]; then
     echo "Kernel source version $source_version differs from running kernel $(uname -K)." >&2
     exit 1
 fi
-if [ ! -f "$drmdir/.hypervdrm-patched" ]; then
-    echo 'Use make deps to prepare the pinned, patched DRM core.' >&2
+if [ ! -f "$drmdir/linuxkpi_version.mk" ] ||
+    ! grep -q 'drm_hyperv_compat_version(void)' "$drmdir/drivers/gpu/drm/drm_os_freebsd.c"; then
+    echo 'The vendored DRM core is missing or unpatched; use a complete project source archive.' >&2
     exit 1
 fi

@@ -11,7 +11,7 @@ The Linux Hyper-V DRM driver was consulted for protocol behavior, cursor
 hiding, display notifications, and the use of software rendering:
 https://github.com/torvalds/linux/tree/v6.12/drivers/gpu/drm/hyperv
 
-The external DRM core is FreeBSD drm-kmod, DRM 6.12:
+The vendored DRM core is FreeBSD drm-kmod, DRM 6.12:
 https://github.com/freebsd/drm-kmod/tree/drm_v6.12.110_1
 Commit: 1d054ae55685c45c23aa86541427dfc72afa9ca1
 
@@ -20,8 +20,9 @@ the FreeBSD DRM sysctl bus ID. It also initializes the native DMA-BUF shim's
 VM descriptor so that unsupported DMA-BUF mappings can be rejected safely.
 An exported compatibility function ensures hypervdrm cannot bind to an
 unmodified or already-loaded stock DRM core.
-It must be applied to the core used at runtime,
-not just the headers used to compile hypervdrm.ko.
+The patch is already applied in vendor/drm-kmod. See vendor/README.md for
+the source subset and update procedure. Both the headers and the runtime
+core are built from this snapshot.
 
 FreeBSD 15.1 kernel sources:
 https://github.com/freebsd/freebsd-src/tree/releng/15.1

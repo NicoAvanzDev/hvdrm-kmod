@@ -21,5 +21,8 @@ guest to remove the fixture; do not load it on the intended desktop VM.
 The client tests userspace buffer mapping, PRIME export and re-import,
 rejection of unsupported DMA-BUF fd mappings, malformed framebuffer offsets,
 software scanout, legacy and atomic page flips, and delivery of completion
-events. Hyper-V transport, visible output, VT switching, and a real Wayland
+events. It also simulates console output during compositor ownership, tests
+console restoration on DRM master release, and verifies a full repaint after
+reacquisition even when the compositor submits only a one-pixel damage clip.
+Hyper-V transport, visible output, VT switching, and a real Wayland
 session still require a Hyper-V guest.

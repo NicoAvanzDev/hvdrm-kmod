@@ -5,6 +5,7 @@
 #include <sys/linker.h>
 #include <sys/module.h>
 #include <sys/limits.h>
+#include <sys/malloc.h>
 #include <machine/metadata.h>
 #include <vm/vm.h>
 #include <vm/pmap.h>
@@ -86,6 +87,9 @@ hv_drm_attach(device_t dev)
 		error = ENOMEM;
 		goto fail;
 	}
+	/* VT must never draw over a compositor's scanout, even during log output. */
+	sc->console_buffer = malloc((size_t)sc->pitch * sc->height,
+	    M_DEVBUF, M_WAITOK | M_ZERO);
 	error = hv_host_configure(sc);
 	if (error != 0)
 		goto fail;
@@ -94,13 +98,12 @@ hv_drm_attach(device_t dev)
 	sc->console.fb_height = sc->height;
 	sc->console.fb_depth = sc->console.fb_bpp = 32;
 	sc->console.fb_stride = sc->pitch;
-	sc->console.fb_size = sc->vram_size;
-	sc->console.fb_pbase = sc->vram_address;
-	sc->console.fb_vbase = (vm_offset_t)sc->vram;
+	sc->console.fb_size = (size_t)sc->pitch * sc->height;
+	sc->console.fb_pbase = 0;
+	sc->console.fb_vbase = (vm_offset_t)sc->console_buffer;
 	sc->console.fb_video_dev = dev;
 	sc->console.fb_name = device_get_nameunit(dev);
-	sc->console.fb_flags = FB_FLAG_MEMATTR;
-	sc->console.fb_memattr = VM_MEMATTR_WRITE_COMBINING;
+	sc->console.fb_flags = FB_FLAG_NOMMAP;
 	error = hv_kms_attach(sc);
 	if (error != 0)
 		goto fail;
@@ -125,6 +128,7 @@ fail:
 	hv_bus_stop(sc);
 	if (sc->vram != NULL)
 		pmap_unmapdev(sc->vram, sc->vram_size);
+	free(sc->console_buffer, M_DEVBUF);
 	return (error);
 }
 

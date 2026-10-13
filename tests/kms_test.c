@@ -131,7 +131,8 @@ main(int argc, char **argv)
 	struct buffer a, b;
 	struct drm_mode_destroy_dumb destroy;
 	struct drm_mode_create_dumb bad = { .width = 1920, .height = 1080, .bpp = 24 };
-	uint32_t crtc, fb_property;
+	struct drm_mode_rect clip = { 0, 0, 1, 1 };
+	uint32_t crtc, fb_property, damage_property, blob, console_pixel = 0x00abcdef;
 	int fd, done = 0;
 
 	fd = open(path, O_RDWR);
@@ -168,6 +169,25 @@ main(int argc, char **argv)
 	wait_flip(fd, &done);
 	check_pixel(0x00123456);
 	drmModeAtomicFree(atomic);
+
+	/* VT output must stay off scanout until the compositor releases ownership. */
+	assert(sysctlbyname("dev.hypervdrm_fixture.0.console_pixel", NULL, NULL,
+	    &console_pixel, sizeof(console_pixel)) == 0);
+	check_pixel(0x00123456);
+	assert(drmDropMaster(fd) == 0);
+	check_pixel(console_pixel);
+	assert(drmSetMaster(fd) == 0);
+	/* Reacquisition overrides a tiny damage clip to remove the entire console. */
+	damage_property = property(fd, planes->planes[0], DRM_MODE_OBJECT_PLANE, "FB_DAMAGE_CLIPS");
+	assert(drmModeCreatePropertyBlob(fd, &clip, sizeof(clip), &blob) == 0);
+	atomic = drmModeAtomicAlloc();
+	assert(atomic != NULL);
+	assert(drmModeAtomicAddProperty(atomic, planes->planes[0], fb_property, b.fb) >= 0);
+	assert(drmModeAtomicAddProperty(atomic, planes->planes[0], damage_property, blob) >= 0);
+	assert(drmModeAtomicCommit(fd, atomic, 0, NULL) == 0);
+	check_pixel(0x00654321);
+	drmModeAtomicFree(atomic);
+	assert(drmModeDestroyPropertyBlob(fd, blob) == 0);
 	drmModeFreePlaneResources(planes);
 	assert(drmModeSetCrtc(fd, crtc, 0, 0, 0, NULL, 0, NULL) == 0);
 	assert(drmModeRmFB(fd, a.fb) == 0);
@@ -181,6 +201,6 @@ main(int argc, char **argv)
 	drmModeFreeConnector(connector);
 	drmModeFreeResources(resources);
 	close(fd);
-	puts("GEM mmap, PRIME export/import, bounds, modeset, page flips, and atomic commits: passed (RAM fixture)");
+	puts("GEM mmap, PRIME, bounds, modeset, flips, atomic commits, console isolation and master handoff: passed (RAM fixture)");
 	return (0);
 }
