@@ -1,0 +1,2 @@
+dev.hypervdrm_fixture.0.pixel: 4282668390
+dev.hypervdrm_fixture.0.last_pixel: 4282668390

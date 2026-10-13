@@ -1,0 +1,84 @@
+--- a/drivers/gpu/drm/drm_os_freebsd.c
++++ b/drivers/gpu/drm/drm_os_freebsd.c
+@@ -135,7 +135,10 @@
+ 	node = SYSCTL_ADD_NODE(ctx_list, SYSCTL_STATIC_CHILDREN(_dev_drm), OID_AUTO, buf,
+ 	    CTLFLAG_RD, NULL, "DRM properties");
+ 	oid_list = SYSCTL_CHILDREN(node);
+-	tmp = pci_get_vendor(dev) + ((u32)pci_get_device(dev) << 16);
++	/* Synthetic VMBus displays have no PCI ivars. */
++	tmp = 0;
++	if (strcmp(device_get_name(device_get_parent(dev)), "pci") == 0)
++		tmp = pci_get_vendor(dev) + ((u32)pci_get_device(dev) << 16);
+ 	SYSCTL_ADD_PROC(ctx_list, oid_list, OID_AUTO, "PCI_ID",
+ 	    CTLTYPE_STRING | CTLFLAG_RD, NULL, tmp,
+ 	    sysctl_pci_id, "A", "PCI vendor and device ID");
+--- a/drivers/gpu/drm/drm_sysctl_freebsd.c
++++ b/drivers/gpu/drm/drm_sysctl_freebsd.c
+@@ -171,15 +171,20 @@
+ {
+ 	struct sysctl_oid *oid;
+ 	int domain, bus, slot, func;
+-	struct pci_dev *pdev = to_pci_dev(dev->dev);
+-
+-	domain = pci_domain_nr(pdev->bus);
+-	bus    = pdev->bus->number;
+-	slot   = PCI_SLOT(pdev->devfn);
+-	func   = PCI_FUNC(pdev->devfn);
+-
+-	snprintf(dev->busid_str, sizeof(dev->busid_str),
+-	    "pci:%04x:%02x:%02x.%d", domain, bus, slot, func);
++	struct pci_dev *pdev;
++
++	if (dev_is_pci(dev->dev)) {
++		pdev = to_pci_dev(dev->dev);
++		domain = pci_domain_nr(pdev->bus);
++		bus = pdev->bus->number;
++		slot = PCI_SLOT(pdev->devfn);
++		func = PCI_FUNC(pdev->devfn);
++		snprintf(dev->busid_str, sizeof(dev->busid_str),
++		    "pci:%04x:%02x:%02x.%d", domain, bus, slot, func);
++	} else {
++		snprintf(dev->busid_str, sizeof(dev->busid_str),
++		    "platform:%s", dev_name(dev->dev));
++	}
+ 	oid = SYSCTL_ADD_STRING(ctx, SYSCTL_CHILDREN(top), OID_AUTO, "busid",
+ 	    CTLFLAG_RD, dev->busid_str, 0, NULL);
+ 	if (oid == NULL)
+--- a/drivers/dma-buf/dma-buf.c
++++ b/drivers/dma-buf/dma-buf.c
+@@ -158,7 +158,7 @@
+ 	     int flags, vm_ooffset_t foff, struct thread *td)
+ {
+ 	struct dma_buf *db;
+-	struct vm_area_struct vma;
++	struct vm_area_struct vma = { 0 };
+ 
+ 	if (!fp_is_db(fp))
+ 		return (EINVAL);
+--- a/drivers/gpu/drm/drm_os_freebsd.h
++++ b/drivers/gpu/drm/drm_os_freebsd.h
+@@ -34,6 +34,7 @@
+ struct drm_minor;
+ int drm_dev_alias(struct device *dev, struct drm_minor *minor, const char *minor_str);
+ void cancel_reset_debug_log(void);
++int drm_hyperv_compat_version(void);
+ 
+ void vt_freeze_main_vd(struct apertures_struct *a);
+ void vt_unfreeze_main_vd(void);
+--- a/drivers/gpu/drm/drm_os_freebsd.c
++++ b/drivers/gpu/drm/drm_os_freebsd.c
+@@ -27,6 +27,14 @@
+ #undef cdev
+ 
+ MALLOC_DEFINE(DRM_MEM_DRIVER, "drm_driver", "DRM DRIVER Data Structures");
++
++/* Let out-of-tree VMBus drivers identify this compatible core at link time. */
++int
++drm_hyperv_compat_version(void)
++{
++	return (1);
++}
++
+ 
+ SYSCTL_NODE(_dev, OID_AUTO, drm, CTLFLAG_RW, 0, "DRM args (compat)");
+ SYSCTL_LONG(_dev_drm, OID_AUTO, __drm_debug, CTLFLAG_RWTUN, &__drm_debug, 0, "drm debug flags (compat)");
