@@ -1,5 +1,5 @@
---- a/xf86drm.c
-+++ b/xf86drm.c
+--- xf86drm.c.orig
++++ xf86drm.c
 @@ -3495,6 +3495,16 @@
      snprintf(name, sizeof(name), DRM_DIR_NAME "/%s%d", mname,
           id + drmGetMinorBase(type));
