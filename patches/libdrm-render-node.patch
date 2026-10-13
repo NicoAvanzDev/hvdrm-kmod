@@ -1,0 +1,19 @@
+--- a/xf86drm.c
++++ b/xf86drm.c
+@@ -3495,6 +3495,16 @@
+     snprintf(name, sizeof(name), DRM_DIR_NAME "/%s%d", mname,
+          id + drmGetMinorBase(type));
+ 
++    /* The name is synthesized from the node number, so make sure the
++     * device actually provides a node of the requested type. KMS-only
++     * drivers have a primary node but no render node. */
++    if (stat(name, &sbuf) || !S_ISCHR(sbuf.st_mode))
++        return NULL;
++    maj = major(sbuf.st_rdev);
++    min = minor(sbuf.st_rdev);
++    if (!drmNodeIsDRM(maj, min) || drmGetMinorType(maj, min) != type)
++        return NULL;
++
+     return strdup(name);
+ #else
+     struct stat sbuf;

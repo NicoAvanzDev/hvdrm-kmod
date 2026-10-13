@@ -65,6 +65,29 @@ expects. An upstream userspace fix must make render-node detection reflect the
 actual device before plain `sway` can select pixman automatically on this stack.
 The minimal verified workaround is `WLR_RENDERER=pixman sway`.
 
+## Testing the proposed libdrm fix
+
+`patches/libdrm-render-node.patch` targets libdrm 2.4.134 (`xf86drm.c`). The
+FreeBSD branch of `drmGetMinorNameForFD()` then returns NULL unless the
+synthesized name is an existing DRM character device of the requested type,
+matching the Linux branch. Devices with a real render node are unaffected.
+It is not yet validated on FreeBSD.
+
+Build the patched port from a ports tree whose `graphics/libdrm` is 2.4.134:
+
+```sh
+sudo mkdir -p /usr/ports/graphics/libdrm/files
+sudo cp patches/libdrm-render-node.patch \
+    /usr/ports/graphics/libdrm/files/patch-xf86drm.c
+cd /usr/ports/graphics/libdrm
+sudo make reinstall clean
+```
+
+Unset `WLR_RENDERER` and start plain `sway -d 2> sway.log`. The log should
+show the pixman renderer and no `Failed to open DRM node
+'/dev/dri/renderD128'` line. To return to the stock library, remove
+`files/patch-xf86drm.c` and run `sudo pkg install -f libdrm`.
+
 ## Other compositors
 
 Wayland is a protocol, rather than a common renderer-selection mechanism.
